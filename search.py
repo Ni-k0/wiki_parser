@@ -84,29 +84,33 @@ class WikipediaSeries(LoggerMixin):
         for table in tables:
             episode_list = []
             season_header = table.find_previous_sibling('h3')
-            season_title = season_header.find("span", {"class": "mw-headline"}).contents[0]
+            season_title = season_header.find("span", {"class": "mw-headline"}).get_text(strip=True)
             season = Season(season_title)
-            episodes = table.find_all("tr", {"class": "vevent"})
-            for episode in episodes:
-                episode_number = episode.find("td").contents[0]
-                episode_title = episode.find("td", {"class": "summary"}).find("a")
-                if not episode_title:
-                    episode_title = episode.find("td", {"class": "summary"}).contents[0]
-                else:
-                    episode_title = episode_title.contents[0]
-                episode_list.append(Episode(episode_title, episode_number))
-            season.episodes = episode_list
+            season.episodes = self.parse_html_table_to_json(table)
             season_list.append(season)
         self.seasons = season_list
+    
+    def parse_html_table_to_json(self, table):
+        table_data = [[cell.text.strip('"') for cell in row] for row in table("tr", {"class": "vevent"})]
+        table_headers = [cell.text.strip() for cell in table.find("tr")("th", {"scope": "col"})]
+        results_list = []
+        for row in table_data:
+            res_dict = {}
+            for idx, item in enumerate(row):
+                res_dict[table_headers[idx]] = item
+            results_list.append(res_dict)
+        return json.dumps(results_list, indent=4)
 
     def write_to_file_system(self):
         for season in self.seasons:
+            self._logger.debug(f"writing results to file sysytem for season: {season.number}")
             directory = os.path.dirname(f'./results/{self.title}/{season.number}/')
             if os.path.exists(directory):
+                self._logger.warning(f"Season folder already exists {directory}, overwriting it.")
                 self.delete_dir_tree(directory)
             os.makedirs(directory)
             with open(f'{directory}/episodes.json', 'w') as episodes_file: 
-                episodes_file.write(season.get_episodes_json())
+                episodes_file.write(season.episodes)
     
     def delete_dir_tree(self, dir_path):
         try:
